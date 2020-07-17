@@ -3,7 +3,7 @@
 Plugin Name:	WP Simple Object Cache
 Description:	Simple object cache plugin that supports Memcached, APC, Xcache or WinCache based on your system. Also provides frontend caching for widgets and wp_nav_menu.
 Author:			Matthew Sigley
-Version:		1.3.0
+Version:		1.3.11
 Author URI:		https://github.com/
 */
 
@@ -244,7 +244,7 @@ class WPSimple_Object_Cache {
         $echo = $args['echo'];
         $args['echo'] = false;
         $args['doing_menu_cache'] = true;
-        $cache_key = maybe_serialize($args);
+        $cache_key = hash( 'sha256', maybe_serialize($args) );
         $output = wp_cache_get( $cache_key, 'wp_nav_menu' );
         if( false === $output ) {
             $name = is_object( $args['menu'] ) ? $args['menu']->slug : $args['menu'];
