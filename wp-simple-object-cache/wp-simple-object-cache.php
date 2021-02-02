@@ -3,7 +3,7 @@
 Plugin Name:	WP Simple Object Cache
 Description:	Simple object cache plugin that supports Memcached, APC, Xcache or WinCache based on your system. Also provides frontend caching for widgets and wp_nav_menu.
 Author:			Matthew Sigley
-Version:		1.3.11
+Version:		1.3.12
 Author URI:		https://github.com/
 */
 
@@ -246,12 +246,13 @@ class WPSimple_Object_Cache {
         $args['doing_menu_cache'] = true;
         $cache_key = hash( 'sha256', maybe_serialize($args) );
         $output = wp_cache_get( $cache_key, 'wp_nav_menu' );
-        if( false === $output ) {
+        if( false === $output || '' === $output ) {
             $name = is_object( $args['menu'] ) ? $args['menu']->slug : $args['menu'];
             if ( empty( $name ) && ! empty( $args['theme_location'] ) )
                 $name = $args['theme_location'];
             $output = wp_nav_menu( $args ) . $this->get_comment( $name, 'wp_nav_menu' );
-            wp_cache_set( $cache_key, $output, 'wp_nav_menu' );
+            if( false !== $output && '' !== $output )
+                wp_cache_set( $cache_key, $output, 'wp_nav_menu' );
         }
         if ( $echo )
             echo $output;
@@ -264,11 +265,12 @@ class WPSimple_Object_Cache {
 
         $cache_key = $widget->id;
         $output = wp_cache_get( $cache_key, 'widget' );
-        if( false === $output ) {
+        if( false === $output || '' === $output ) {
             ob_start();
-            call_user_func_array( array( $widget, 'widget' ), array( $args, $instance ) );
+            $success = call_user_func_array( array( $widget, 'widget' ), array( $args, $instance ) );
             $output = ob_get_clean() . $this->get_comment( $name, 'widget' );
-            wp_cache_set( $cache_key, $output, 'widget' );
+            if( false !== $output && '' !== $output )
+                wp_cache_set( $cache_key, $output, 'widget' );
         }
         echo $output;
 
