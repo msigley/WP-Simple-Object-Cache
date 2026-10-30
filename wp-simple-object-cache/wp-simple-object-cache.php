@@ -1,40 +1,38 @@
 <?php
 /*
 Plugin Name:	WP Simple Object Cache
-Description:	Simple object cache plugin that supports Memcached, APC, Xcache or WinCache based on your system. Also provides frontend caching for widgets and wp_nav_menu.
-Author:			Matthew Sigley
-Version:		1.3.12
-Author URI:		https://github.com/
+Description:	Simple object cache plugin that supports Redis. Also provides frontend caching for widgets and wp_nav_menu.
+Version:		4.0.0
+Requires at least: 6.9
+Requires PHP: 7.4
+Author: Matthew Sigley
+Author URI: http://github.com/msigley/
+License: GPL2
+Update URI: false
 */
 
 // Block direct requests
 if ( !defined('ABSPATH') )
 	die( 'Sorry Chuck!' );
 
-register_activation_hook( __FILE__, 'add_object_cache_file' );
-register_deactivation_hook( __FILE__, 'remove_object_cache_file' );
-
-/**
- * Place the object-cache.php file into wp-contents.
- */
-function add_object_cache_file() {
-	$from = dirname( __FILE__ ) . '/lib/object-cache.php';
-	$to = WP_CONTENT_DIR . '/object-cache.php';
-	copy( $from, $to );
-}
-
-/**
- * Remove the object-cache.php file from wp-contents.
- */
-function remove_object_cache_file() {
-	$file = WP_CONTENT_DIR . '/object-cache.php';
-	unlink( $file );
-}
-
 class WPSimple_Object_Cache {
-    function __construct() {
+    private $path = '';
+
+    public function __construct() { }
+
+    public function init() {
+        //Plugin path
+		$this->path = plugin_dir_path( __FILE__ );
+
+        //Plugin activation/deactivation
+        register_activation_hook( __FILE__, array( $this, 'activation' ) );
+        register_deactivation_hook( __FILE__, array( $this, 'deactivation' ) );
+
         if ($this->_do_flush()) {
             //Admin area actions
+            add_filter('plugin_action_links_' . plugin_basename(__FILE__), array( $this, 'filter_plugin_actions' ), 10, 2 );
+            add_action( 'admin_init', array( $this, 'handle_flush_object_cache_request' ) );
+
             //widget cache options
             add_action('in_widget_form', array( $this, 'in_widget_form' ), 10, 3);
             add_filter('widget_update_callback', array( $this, 'widget_update_callback' ), 10, 4);
@@ -86,8 +84,65 @@ class WPSimple_Object_Cache {
 
         //Edit user profile cache flush
         add_action('edit_user_profile_update', array( &$this, 'on_change_profile' ), 0);
+
+        //Cache Stats in Admin
+        add_action( 'after_plugin_row_meta', array( &$this, 'after_plugin_row_meta' ), 10, 2 );
+
+        if( defined( 'WP_OBJECT_CACHE_DEBUG' ) && WP_OBJECT_CACHE_DEBUG ) {
+            add_action( 'shutdown', array( &$this, 'print_page_cache_stats' ) );
+        }
     }
-	
+    
+    public function activation() {
+        @mkdir( WP_CONTENT_DIR . '/object-cache/', 0655 );
+
+        $this->install_object_cache_drop_in();
+    }
+
+    public function deactivation() {
+        wp_cache_flush();
+        wp_cache_close();
+
+        $cache_files = glob( WP_CONTENT_DIR . '/object-cache/*' );
+        foreach( $cache_files as $cache_file ) {
+            @unlink( $cache_file );
+        }
+
+        $this->uninstall_object_cache_drop_in();
+    }
+
+    public function install_object_cache_drop_in() {
+        $from = $this->path . '/lib/object-cache.php';
+        $to = WP_CONTENT_DIR . '/object-cache.php';
+        copy( $from, $to ); // Will overwrite an existing file
+    }
+
+    public function uninstall_object_cache_drop_in() {
+        $file = WP_CONTENT_DIR . '/object-cache.php';
+        @unlink( $file );
+    }
+        
+    public function filter_plugin_actions($links, $file) {
+        $links['flush_cache'] = '<a href="' . admin_url( '?flush_object_cache=1', 'https' ) . '">Flush Object Cache</a>';
+        return $links;
+    }
+
+    public function handle_flush_object_cache_request() {
+		if( empty( $_GET['flush_object_cache'] ) )
+			return;
+
+        wp_cache_flush();
+        wp_cache_close();
+
+        $cache_files = glob( WP_CONTENT_DIR . '/object-cache/*' );
+        foreach( $cache_files as $cache_file ) {
+            @unlink( $cache_file );
+        }
+
+		wp_redirect( admin_url( 'plugins.php#wp-simple-object-cache', 'https'), 307 );
+		die();
+	}
+
 	/**
 	 * Checks if post should be flushed or not. Returns true if it should not be flushed
 	 * @param $post
@@ -139,13 +194,9 @@ class WPSimple_Object_Cache {
      * Change action
      */
     function on_change_option($option) {
-        static $flushed = false;
-
-        if (!$flushed) {
-            if ($option != 'cron') {
-                wp_cache_flush();
-                $flushed = true;
-            }
+        if ($option != 'cron') {
+            wp_cache_flush();
+            $flushed = true;
         }
     }
 
@@ -265,10 +316,10 @@ class WPSimple_Object_Cache {
 
         $cache_key = $widget->id;
         $output = wp_cache_get( $cache_key, 'widget' );
-        if( false === $output || '' === $output ) {
+        if( false === $output || !is_string( $output ) || !preg_match( '/^<!--.+-->\s*\S/', $output ) ) {
             ob_start();
             $success = call_user_func_array( array( $widget, 'widget' ), array( $args, $instance ) );
-            $output = ob_get_clean() . $this->get_comment( $name, 'widget' );
+            $output = $this->get_comment( $args['name'], 'widget' ) . "\n\n" . ob_get_clean();
             if( false !== $output && '' !== $output )
                 wp_cache_set( $cache_key, $output, 'widget' );
         }
@@ -277,7 +328,7 @@ class WPSimple_Object_Cache {
         return false;
     }
 
-    public function in_widget_form( &$widget, &$return, $instance ) {
+    public function in_widget_form( $widget, $return, $instance ) {
         ?>
         <p>
             <input class="checkbox" type="checkbox" <?php checked( $instance['exclude_from_widget_cache'], 1 ); ?> id="<?php echo $widget->get_field_id( 'exclude_from_widget_cache' ); ?>" name="<?php echo $widget->get_field_name( 'exclude_from_widget_cache' ); ?>" value="1" /> 
@@ -302,13 +353,44 @@ class WPSimple_Object_Cache {
         return '<!-- ' . esc_html( $name ) . ' ' . esc_html( $type ) . ' cached on ' . date_i18n( DATE_RSS ) . ' -->';
     }
 
+    public function after_plugin_row_meta( $plugin_file, $plugin_data ) {
+        if( $plugin_file !== 'object-cache.php' )
+            return;
+
+        global $wp_object_cache;
+        if( method_exists( $wp_object_cache, 'cache_stats' ) ) {
+            $wp_object_cache->cache_stats();
+        } else {
+            echo '<p><strong>No supported object cache backend available.</strong></p>';
+        }
+
+        echo '<p>';
+        echo '<strong>Supported object cache backends in order of preference:</strong><br />';
+        echo '<ul>';
+        echo '<li>Redis (via php_redis extension). <code>REDIS</code></li>';
+        echo '<li>Database Abstraction Layer with LMDB database handler (via php-dba extension). <code>PHPLMDB</code><br />'
+            .'Requires PHP 7.2.0+.</li>';
+        echo '</ul>';
+        echo 'A preferred object cache backend can be configured using the values above using the <code>WP_OBJECT_CACHE</code> setting in the wp-config.php file.';
+        echo '</p>';
+    }
+
+    public function print_page_cache_stats() {
+        global $wp_object_cache;
+        echo '<div style="clear: both; margin-left: 160px; padding-left: 20px;">';
+        $wp_object_cache->stats();
+        echo '</div>';
+    }
+
     /**
      * @return bool
      */
     private function _do_flush() {
         //TODO: Requires admin flush until OC can make changes in Admin backend
+        //TODO: Verify this with AJAX changes in newer WP
         return is_admin() || defined('WP_ADMIN');
     }
 }
 
 $WPSimple_Object_Cache = new WPSimple_Object_Cache;
+$WPSimple_Object_Cache->init();

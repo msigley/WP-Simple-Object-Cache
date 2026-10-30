@@ -1,16 +1,23 @@
 <?php
 $object_cache_base_path = dirname(__FILE__);
+$preferred_object_cache = defined( 'WP_OBJECT_CACHE' ) ? WP_OBJECT_CACHE : false;
 
-if ( isset( $memcached_servers ) ) { // Use Memcached
-	require_once( $object_cache_base_path . '/memcached/object-cache.php' );
-} elseif ( function_exists( 'apc_add' ) ) { // USE APC Cache
-	require_once( $object_cache_base_path . '/apc/object-cache.php' );
-} elseif ( function_exists( 'xcache_get' ) ) { // Use XCACHE
-	require_once( $object_cache_base_path . '/xcache/object-cache.php' );
-} elseif ( class_exists( 'Redis' ) ) { // Use Redis
-	require_once( $object_cache_base_path . '/redis/object-cache.php' );
-} elseif ( function_exists( 'wincache_ucache_get' ) ) { // Use WinCache
-	require_once( $object_cache_base_path . '/wincache/object-cache.php' );
-} else { // No Cache
-	require_once( ABSPATH . WPINC . '/cache.php' );
+if( $preferred_object_cache === false ) {
+	if ( class_exists( 'Redis' ) )
+		$preferred_object_cache = 'REDIS';
+	else if( version_compare( PHP_VERSION, '7.2.0', '>=' ) && function_exists( 'dba_open' ) )
+		$preferred_object_cache = 'PHPLMDB';
+}
+
+switch( $preferred_object_cache ) {
+	case 'REDIS':
+		require_once( $object_cache_base_path . '/redis/object-cache.php' );
+		break;
+	case 'PHPLMDB':
+		require_once( $object_cache_base_path . '/php-dba-lmdb/object-cache.php' );
+		break;
+	default:
+		// No cache
+		require_once( ABSPATH . WPINC . '/cache.php' );
+		break;
 }

@@ -2,12 +2,30 @@
 /**
  * Plugin Name: WP Simple Redis Object Cache
  * Author:      Matthew Sigley
- * Version:     1.0.1
+ * Version:     2.0.0
  */
 
-// Check if Redis class is installed
-if ( ! class_exists( 'Redis' ) ) {
-	return;
+/**
+ * Determines whether the object cache implementation supports a particular feature.
+ *
+ * @param string $feature Name of the feature to check for. Possible values include:
+ *                        'add_multiple', 'set_multiple', 'get_multiple', 'delete_multiple',
+ *                        'flush_runtime', 'flush_group'.
+ * @return bool True if the feature is supported, false otherwise.
+ */
+function wp_cache_supports( $feature ) {
+    switch ( $feature ) {
+		case 'add_multiple':
+		case 'set_multiple':
+		case 'get_multiple':
+		case 'delete_multiple':
+		case 'flush_runtime':
+        case 'flush_group':
+            return true;
+
+        default:
+            return false;
+    }
 }
 
 /**
@@ -25,9 +43,30 @@ if ( ! class_exists( 'Redis' ) ) {
  *
  * @return bool              Returns TRUE on success or FALSE on failure.
  */
-function wp_cache_add( $key, $value, $group = 'default', $expiration = 0 ) {
+function wp_cache_add( $key, $value, $group = '', $expiration = 0 ) {
 	global $wp_object_cache;
 	return $wp_object_cache->add( $key, $value, $group, $expiration );
+}
+
+/**
+ * Adds multiple values to the cache in one call.
+ *
+ * @since 6.0.0
+ *
+ * @see WP_Object_Cache::add_multiple()
+ * @global WP_Object_Cache $wp_object_cache Object cache global instance.
+ *
+ * @param array  $data   Array of keys and values to be set.
+ * @param string $group  Optional. Where the cache contents are grouped. Default empty.
+ * @param int    $expire Optional. When to expire the cache contents, in seconds.
+ *                       Default 0 (no expiration).
+ * @return bool[] Array of return values, grouped by key. Each value is either
+ *                true on success, or false if cache key and group already exist.
+ */
+function wp_cache_add_multiple( array $data, $group = '', $expire = 0 ) {
+	global $wp_object_cache;
+
+	return $wp_object_cache->add_multiple( $data, $group, (int) $expire );
 }
 
 /**
@@ -51,7 +90,7 @@ function wp_cache_close() {
  *
  * @return int|bool      Returns item's new value on success or FALSE on failure.
  */
-function wp_cache_decr( $key, $offset = 1, $group = 'default' ) {
+function wp_cache_decr( $key, $offset = 1, $group = '' ) {
 	global $wp_object_cache;
 	return $wp_object_cache->decr( $key, $offset, $group );
 }
@@ -67,23 +106,28 @@ function wp_cache_decr( $key, $offset = 1, $group = 'default' ) {
  *
  * @return bool           Returns TRUE on success or FALSE on failure.
  */
-function wp_cache_delete( $key, $group = 'default', $time = 0 ) {
+function wp_cache_delete( $key, $group = '', $time = 0 ) {
 	global $wp_object_cache;
 	return $wp_object_cache->delete( $key, $group, $time );
 }
 
 /**
- * Removes cache contents for a given group.
+ * Deletes multiple values from the cache in one call.
  *
- * @param string $group Where the cache contents are grouped
- * 
- * @global WP_Object_Cache $wp_object_cache
- * 
- * @return bool True on successful removal, false on failure
+ * @since 6.0.0
+ *
+ * @see WP_Object_Cache::delete_multiple()
+ * @global WP_Object_Cache $wp_object_cache Object cache global instance.
+ *
+ * @param array  $keys  Array of keys under which the cache to deleted.
+ * @param string $group Optional. Where the cache contents are grouped. Default empty.
+ * @return bool[] Array of return values, grouped by key. Each value is either
+ *                true on success, or false if the contents were not deleted.
  */
-function wp_cache_delete_group( $group ) {
+function wp_cache_delete_multiple( array $keys, $group = '' ) {
 	global $wp_object_cache;
-	return $wp_object_cache->delete_group( $group );
+
+	return $wp_object_cache->delete_multiple( $keys, $group );
 }
 
 /**
@@ -95,9 +139,37 @@ function wp_cache_delete_group( $group ) {
  *
  * @return bool             Returns TRUE on success or FALSE on failure.
  */
-function wp_cache_flush( $delay = 0 ) {
+function wp_cache_flush() {
 	global $wp_object_cache;
-	return $wp_object_cache->flush( $delay );
+	return $wp_object_cache->flush();
+}
+
+/**
+ * Removes all cache items from the in-memory runtime cache.
+ *
+ * @since 6.0.0
+ *
+ * @see WP_Object_Cache::flush()
+ *
+ * @return bool True on success, false on failure.
+ */
+function wp_cache_flush_runtime() {
+	global $wp_object_cache;
+	return $wp_object_cache->flush_runtime();
+}
+
+/**
+ * Removes cache contents for a given group.
+ *
+ * @param string $group Where the cache contents are grouped
+ * 
+ * @global WP_Object_Cache $wp_object_cache
+ * 
+ * @return bool True on successful removal, false on failure
+ */
+function wp_cache_flush_group( $group ) {
+	global $wp_object_cache;
+	return $wp_object_cache->flush_group( $group );
 }
 
 /**
@@ -112,7 +184,7 @@ function wp_cache_flush( $delay = 0 ) {
  *
  * @return bool|mixed             Cached object value.
  */
-function wp_cache_get( $key, $group = 'default', $force = false, &$found = null ) {
+function wp_cache_get( $key, $group = '', $force = false, &$found = null ) {
 	global $wp_object_cache;
 
 	$is_alloptions = $key == 'alloptions' && $group = 'options';
@@ -172,7 +244,7 @@ function wp_cache_get_multiple( $keys, $group = '', $force = false ) {
  *
  * @return int|bool      Returns item's new value on success or FALSE on failure.
  */
-function wp_cache_incr( $key, $offset = 1, $group = 'default' ) {
+function wp_cache_incr( $key, $offset = 1, $group = '' ) {
 	global $wp_object_cache;
 	return $wp_object_cache->incr( $key, $offset, $group );
 }
@@ -204,7 +276,7 @@ function wp_cache_init() {
  *
  * @return bool              Returns TRUE on success or FALSE on failure.
  */
-function wp_cache_replace( $key, $value, $group = 'default', $expiration = 0 ) {
+function wp_cache_replace( $key, $value, $group = '', $expiration = 0 ) {
 	global $wp_object_cache;
 	return $wp_object_cache->replace( $key, $value, $group, $expiration );
 }
@@ -223,9 +295,30 @@ function wp_cache_replace( $key, $value, $group = 'default', $expiration = 0 ) {
  *
  * @return bool              Returns TRUE on success or FALSE on failure.
  */
-function wp_cache_set( $key, $value, $group = 'default', $expiration = 0 ) {
+function wp_cache_set( $key, $value, $group = '', $expiration = 0 ) {
 	global $wp_object_cache;
 	return $wp_object_cache->set( $key, $value, $group, $expiration );
+}
+
+/**
+ * Sets multiple values to the cache in one call.
+ *
+ * @since 6.0.0
+ *
+ * @see WP_Object_Cache::set_multiple()
+ * @global WP_Object_Cache $wp_object_cache Object cache global instance.
+ *
+ * @param array  $data   Array of keys and values to be set.
+ * @param string $group  Optional. Where the cache contents are grouped. Default empty.
+ * @param int    $expire Optional. When to expire the cache contents, in seconds.
+ *                       Default 0 (no expiration).
+ * @return bool[] Array of return values, grouped by key. Each value is either
+ *                true on success, or false on failure.
+ */
+function wp_cache_set_multiple( array $data, $group = '', $expire = 0 ) {
+	global $wp_object_cache;
+
+	return $wp_object_cache->set_multiple( $data, $group, $expire );
 }
 
 /**
@@ -281,7 +374,7 @@ class WP_Object_Cache {
 	public $cache = array();
 
 	/**
-	 * The amount of times the cache data was already stored in the cache.
+	 * The amount of times the cache data was already stored in the memory cache.
 	 *
 	 * @since 2.5.0
 	 * @var int
@@ -289,12 +382,28 @@ class WP_Object_Cache {
 	public $cache_hits = 0;
 
 	/**
-	 * Amount of times the cache did not have the request in cache.
+	 * Amount of times the cache did not have the request in the memory cache.
 	 *
 	 * @since 2.0.0
 	 * @var int
 	 */
 	public $cache_misses = 0;
+
+	/**
+	 * The amount of times the cache data was already stored in the external cache.
+	 *
+	 * @since 2.5.0
+	 * @var int
+	 */
+	public $external_cache_hits = 0;
+
+	/**
+	 * Amount of times the cache did not have the request in the external cache.
+	 *
+	 * @since 2.0.0
+	 * @var int
+	 */
+	public $external_cache_misses = 0;
 
 	/**
 	 * List of global cache groups.
@@ -332,7 +441,7 @@ class WP_Object_Cache {
 	/**
 	 * Holds the Redis client.
 	 *
-	 * @var Redis
+	 * @var int
 	 */
 	private static $num_instances = 0;
 
@@ -350,6 +459,14 @@ class WP_Object_Cache {
 	 */
 	private static $redis_connected = false;
 
+	/**
+	 * Redis connection settings
+	 * 
+	 * @var array
+	 */
+	private $redis_settings = null;
+
+	// The marker characters below work because compressed text will always start with \78 and these characters never appear in normal text.
 	/**
 	 * Character used at the being of strings to mark the string is compressed.
 	 * SOT is our compression marker. This character is never used in actual text.
@@ -372,24 +489,28 @@ class WP_Object_Cache {
 	 */
 	public function __construct() {
 		// General Redis settings
-		$redis_settings = array(
+		$this->redis_settings = array(
 			'host' => '127.0.0.1',
 			'port' => 6379,
-			'auth' => false,
-			'database' => 0
+			'user' => false,
+			'pass' => false,
+			'database' => null
 		);
 
 		if ( defined( 'WP_REDIS_BACKEND_HOST' ) && WP_REDIS_BACKEND_HOST ) {
-			$redis_settings['host'] = WP_REDIS_BACKEND_HOST;
+			$this->redis_settings['host'] = WP_REDIS_BACKEND_HOST;
 		}
 		if ( defined( 'WP_REDIS_BACKEND_PORT' ) && WP_REDIS_BACKEND_PORT ) {
-			$redis_settings['port'] = WP_REDIS_BACKEND_PORT;
+			$this->redis_settings['port'] = WP_REDIS_BACKEND_PORT;
 		}
-		if ( defined( 'WP_REDIS_BACKEND_AUTH' ) && WP_REDIS_BACKEND_AUTH ) {
-			$redis_settings['auth'] = WP_REDIS_BACKEND_AUTH;
+		if ( defined( 'WP_REDIS_BACKEND_USER' ) && WP_REDIS_BACKEND_USER ) {
+			$this->redis_settings['user'] = WP_REDIS_BACKEND_USER;
+		}
+		if ( defined( 'WP_REDIS_BACKEND_PASS' ) && WP_REDIS_BACKEND_PASS ) {
+			$this->redis_settings['pass'] = WP_REDIS_BACKEND_PASS;
 		}
 		if ( defined( 'WP_REDIS_BACKEND_DB' ) && WP_REDIS_BACKEND_DB ) {
-			$redis_settings['database'] = WP_REDIS_BACKEND_DB;
+			$this->redis_settings['database'] = WP_REDIS_BACKEND_DB;
 		}
 
 		/**
@@ -402,35 +523,41 @@ class WP_Object_Cache {
 			define( 'WP_CACHE_KEY_SALT', hash('crc32b', ABSPATH ) ); // Use crc32b to shorten key size
 		}
 
+		// Check if php-redis extension is enabled and WP_REDIS_BACKEND_DB is defined.
+		if( class_exists( 'Redis' ) && $this->redis_settings['database'] !== null ) {
+			if( !self::$redis_connected || empty( self::$redis ) ) {
+				try {
+					// Calulate Redis timeout based on the PHP max_execution_time setting.
+					$timeout = ini_get( 'max_execution_time' );
+					if( false === $timeout )
+						$timeout = 30; // Default max_execution_time is 30 seconds.
+					if( empty( $timeout ) )
+						$timeout = 300; // We want all connections to have a timeout.
+					$timeout += 2; // Add a little leeway so we don't have Redis timeout issues with long running scripts.
 
-		// Use Redis PECL library.
-		if( !self::$redis_connected || empty( self::$redis ) ) {
-			try {
-				// Calulate Redis timeout based on the PHP max_execution_time setting.
-				$timeout = ini_get( 'max_execution_time' );
-				if( false === $timeout )
-					$timeout = 30; // Default max_execution_time is 30 seconds.
-				if( empty( $timeout ) )
-					$timeout = 300; // We want all connections to have a timeout.
-				$timeout += 2; // Add a little leeway so we don't have Redis timeout issues with long running scripts.
+					self::$redis = new Redis();
+					self::$redis->connect( $this->redis_settings['host'], $this->redis_settings['port'], $timeout );
+					self::$redis->client( 'setname', uniqid( 'PHP_' . $this->redis_settings['database'] . '_' . WP_CACHE_KEY_SALT . '_' . $_SERVER['REMOTE_ADDR'] . '_' . $_SERVER['REMOTE_PORT'] . '_', true ) ); // This allows connections to be identified in RedisInsight
 
-				self::$redis = new Redis();
-				self::$redis->connect( $redis_settings['host'], $redis_settings['port'], $timeout );
-				self::$redis->client( 'setname', uniqid( 'PHP_' . $redis_settings['database'] . '_' . WP_CACHE_KEY_SALT . '_' . $_SERVER['REMOTE_ADDR'] . '_' . $_SERVER['REMOTE_PORT'] . '_', true ) ); // This allows connections to be identified in RedisInsight
+					self::$redis->setOption( Redis::OPT_SERIALIZER, Redis::SERIALIZER_NONE );
+					if( !empty( WP_CACHE_KEY_SALT ) )
+						self::$redis->setOption( Redis::OPT_PREFIX, WP_CACHE_KEY_SALT . ':' );
 
-				self::$redis->setOption( Redis::OPT_SERIALIZER, Redis::SERIALIZER_NONE );
-				if( !empty( WP_CACHE_KEY_SALT ) )
-					self::$redis->setOption( Redis::OPT_PREFIX, WP_CACHE_KEY_SALT . ':' );
+					if ( false !== $this->redis_settings['pass'] ) {
+						if( false !== $this->redis_settings['user'] ) {
+							self::$redis->auth( $this->redis_settings['user'], $this->redis_settings['pass'] );
+						} else {
+							self::$redis->auth( $this->redis_settings['pass'] );
+						}
+					}
 
-				if ( false !== $redis_settings['auth'] )
-					self::$redis->auth( $redis_settings['auth'] );
+					self::$redis->select( $this->redis_settings['database'] );
 
-				self::$redis->select( $redis_settings['database'] );
+					self::$redis_connected = true;
 
-				self::$redis_connected = true;
-
-			} catch ( RedisException $e ) {
-				$this->close();
+				} catch ( RedisException $e ) {
+					$this->close();
+				}
 			}
 		}
 
@@ -586,6 +713,28 @@ class WP_Object_Cache {
 	}
 
 	/**
+	 * Adds multiple values to the cache in one call.
+	 *
+	 * @since 6.0.0
+	 *
+	 * @param array  $data   Array of keys and values to be added.
+	 * @param string $group  Optional. Where the cache contents are grouped. Default empty.
+	 * @param int    $expire Optional. When to expire the cache contents, in seconds.
+	 *                       Default 0 (no expiration).
+	 * @return bool[] Array of return values, grouped by key. Each value is either
+	 *                true on success, or false if cache key and group already exist.
+	 */
+	public function add_multiple( array $data, $group = '', $expire = 0 ) {
+		$values = array();
+
+		foreach ( $data as $key => $value ) {
+			$values[ $key ] = $this->add( $key, $value, $group, $expire );
+		}
+
+		return $values;
+	}
+
+	/**
 	 * Sets the list of global cache groups.
 	 *
 	 * @since 3.0.0
@@ -670,12 +819,32 @@ class WP_Object_Cache {
 	}
 
 	/**
+	 * Deletes multiple values from the cache in one call.
+	 *
+	 * @since 6.0.0
+	 *
+	 * @param array  $keys  Array of keys to be deleted.
+	 * @param string $group Optional. Where the cache contents are grouped. Default empty.
+	 * @return bool[] Array of return values, grouped by key. Each value is either
+	 *                true on success, or false if the contents were not deleted.
+	 */
+	public function delete_multiple( array $keys, $group = '' ) {
+		$values = array();
+
+		foreach ( $keys as $key ) {
+			$values[ $key ] = $this->delete( $key, $group );
+		}
+
+		return $values;
+	}
+
+	/**
 	 * Remove the contents of all cache keys in the group.
 	 *
 	 * @param string $group Where the cache contents are grouped.
 	 * @return boolean True on success, false on failure.
 	 */
-	public function delete_group( $group = 'default' ) {
+	public function flush_group( $group = 'default' ) {
 		if ( empty( $group ) ) {
 			$group = 'default';
 		}
@@ -718,6 +887,17 @@ class WP_Object_Cache {
 		return true;
 	}
 
+	/**
+	 * Clears the in-memory cache of all data leaving the external cache untouched.
+	 *
+	 * @return bool Always returns true.
+	 */
+	public function flush_runtime() {
+		$this->cache = array();
+
+		return true;
+	}
+
 	
 	/**
 	 * Retrieves the cache contents, if it exists.
@@ -739,6 +919,8 @@ class WP_Object_Cache {
 	 * @return mixed|false The cache contents on success, false on failure to retrieve contents.
 	 */
 	public function get( $key, $group = 'default', $force = false, &$found = null ) {
+		$external_cache_queried = false;
+
 		if ( empty( $group ) ) {
 			$group = 'default';
 		}
@@ -748,13 +930,20 @@ class WP_Object_Cache {
 		}
 
 		if ( $this->_exists( $key, $group ) ) {
-			if ( ( $force || !isset( $this->cache[ $group ][ $key ] ) ) && $this->can_redis( $group ) )
+			if ( ( $force || !isset( $this->cache[ $group ][ $key ] ) ) && $this->can_redis( $group ) ) {
+				$external_cache_queried = true;
+
 				$this->cache[ $group ][ $key ] = $this->get_redis( "$group:$key" );
+			}
 
 			if ( isset( $this->cache[ $group ][ $key ] ) ) {
-				$found             = true;
-				$this->cache_hits += 1;
-
+				$found = true;
+				if( $external_cache_queried ) {
+					$this->external_cache_hits += 1;
+				} else {
+					$this->cache_hits += 1;
+				}
+				
 				if( 'options' == $group && $this->needs_decompressed( $this->cache[ $group ][ $key ] ) )
 					$this->cache[ $group ][ $key ] = $this->decompress( $this->cache[ $group ][ $key ] );
 
@@ -766,8 +955,12 @@ class WP_Object_Cache {
 			}
 		}
 
-		$found               = false;
-		$this->cache_misses += 1;
+		$found = false;
+		if( $external_cache_queried ) {
+			$this->external_cache_misses += 1;
+		} else {
+			$this->cache_misses += 1;
+		}
 		return false;
 	}
 
@@ -918,6 +1111,27 @@ class WP_Object_Cache {
 	}
 
 	/**
+	 * Sets multiple values to the cache in one call.
+	 *
+	 * @since 6.0.0
+	 *
+	 * @param array  $data   Array of key and value to be set.
+	 * @param string $group  Optional. Where the cache contents are grouped. Default empty.
+	 * @param int    $expire Optional. When to expire the cache contents, in seconds.
+	 *                       Default 0 (no expiration).
+	 * @return bool[] Array of return values, grouped by key. Each value is always true.
+	 */
+	public function set_multiple( array $data, $group = '', $expire = 0 ) {
+		$values = array();
+
+		foreach ( $data as $key => $value ) {
+			$values[ $key ] = $this->set( $key, $value, $group, $expire );
+		}
+
+		return $values;
+	}
+
+	/**
 	 * Echoes the stats of the caching.
 	 *
 	 * Gives the cache hits, and cache misses. Also prints every cached group,
@@ -927,8 +1141,10 @@ class WP_Object_Cache {
 	 */
 	public function stats() {
 		echo '<p>';
-		echo "<strong>Cache Hits:</strong> {$this->cache_hits}<br />";
-		echo "<strong>Cache Misses:</strong> {$this->cache_misses}<br />";
+		echo "<strong>In Memory Cache Hits:</strong> {$this->cache_hits}<br />";
+		echo "<strong>In Memory Cache Misses:</strong> {$this->cache_misses}<br />";
+		echo "<strong>Redis Cache Hits:</strong> {$this->external_cache_hits}<br />";
+		echo "<strong>Redis Cache Misses:</strong> {$this->external_cache_misses}<br />";
 		if( !empty( $this->cache['options'] ) ) {
 			$compressed_percent = ( count( array_filter( $this->cache['options'], array( $this, 'needs_decompressed' ) ) ) / count( $this->cache['options'] ) ) * 100;
 			$decompressed_percent = 100 - $compressed_percent;
@@ -941,6 +1157,24 @@ class WP_Object_Cache {
 			echo "<li><strong>Group:</strong> $group - ( " . number_format( strlen( serialize( $cache ) ) / 1024, 2 ) . 'k )</li>';
 		}
 		echo '</ul>';
+	}
+
+	public function cache_stats() {
+		echo '<p><strong>Using Redis (via php_redis extension).</strong></p>';
+		echo '<p>';
+		if( self::$redis_connected ) {
+			echo '<strong>Connected to database.</strong><br />';
+		} else {
+			echo '<strong>Unable to connect to database.</strong><br />';
+		}
+		echo 'Configued database connection settings:<br />';
+		echo '<code>WP_REDIS_BACKEND_HOST</code>&nbsp;:&nbsp;<code>' . $this->redis_settings['host'] . '</code><br />';
+		echo '<code>WP_REDIS_BACKEND_PORT</code>&nbsp;:&nbsp;<code>' . $this->redis_settings['port'] . '</code><br />';
+		echo '<code>WP_REDIS_BACKEND_USER</code>&nbsp;:&nbsp;<code>' . $this->redis_settings['user'] . '</code><br />';
+		echo '<code>WP_REDIS_BACKEND_PASS</code>&nbsp;:&nbsp;<code>' . $this->redis_settings['pass'] . '</code><br />';
+		echo '<code>WP_REDIS_BACKEND_DB</code>&nbsp;:&nbsp;<code>' . $this->redis_settings['database'] . '</code><br />';
+		echo 'These settings can be configured in the wp-config.php file.';
+		echo '</p>';
 	}
 
 	/**
