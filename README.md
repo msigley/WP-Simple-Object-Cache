@@ -16,4 +16,4 @@ Object cache plugin that implements Redis (via php-redis extension) or Database 
 * Frontend caching for widgets.
 * Frontend caching for navigation menus.
 
-## Configuration and settings are documented in the "Plugins > Drop-ins" area of the WP Admin when the lugin is active.
+## Configuration and settings are documented in the "Plugins > Drop-ins" area of the WP Admin when the plugin is active.
